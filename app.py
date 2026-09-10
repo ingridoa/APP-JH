@@ -117,7 +117,7 @@ def get_db_connection():
     return conn
 
 # ==========================================
-# 2. BASE DE DATOS Y AUTO-MIGRACIÓN
+# 2. BASE DE DATOS Y AUTO-MIGRACIÓN DE EA-XXXX
 # ==========================================
 def init_db():
     conn = get_db_connection()
@@ -166,6 +166,7 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS empresas_cliente (
             id_empresa INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo_ea TEXT,
             codigo_id_fk TEXT NOT NULL,
             rut_empresa TEXT NOT NULL,
             razon_social TEXT NOT NULL,
@@ -178,6 +179,24 @@ def init_db():
             FOREIGN KEY (codigo_id_fk) REFERENCES ficha_ingreso_cliente(codigo_id)
         )
     """)
+
+    # 1. Verificar e incorporar columnas sin restricción UNIQUE directa en ALTER TABLE
+    cursor.execute("PRAGMA table_info(empresas_cliente)")
+    cols_emp = [c[1] for c in cursor.fetchall()]
+    
+    if "codigo_ea" not in cols_emp:
+        cursor.execute("ALTER TABLE empresas_cliente ADD COLUMN codigo_ea TEXT DEFAULT ''")
+
+    # 2. Asignar códigos EA-XXXX a registros antiguos que estén vacíos o nulos
+    cursor.execute("SELECT id_empresa FROM empresas_cliente WHERE codigo_ea IS NULL OR codigo_ea = ''")
+    filas_sin_ea = cursor.fetchall()
+    for fila in filas_sin_ea:
+        id_emp_old = fila[0]
+        cod_ea_gen = f"EA-{id_emp_old:04d}"
+        cursor.execute("UPDATE empresas_cliente SET codigo_ea = ? WHERE id_empresa = ?", (cod_ea_gen, id_emp_old))
+
+    # 3. Crear índice único independiente para garantizar unicidad sin errores de ALTER TABLE
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_empresas_codigo_ea ON empresas_cliente(codigo_ea) WHERE codigo_ea IS NOT NULL AND codigo_ea != ''")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS servicios_mensuales_cliente (
@@ -215,7 +234,7 @@ def init_db():
 init_db()
 
 # ==========================================
-# FUNCIONES AUXILIARES
+# FUNCIONES AUXILIARES DE CÓDIGOS
 # ==========================================
 def obtener_proximo_codigo_id():
     conn = get_db_connection()
@@ -225,6 +244,15 @@ def obtener_proximo_codigo_id():
     conn.close()
     sig_id = 1 if max_id is None else max_id + 1
     return f"CLI-{sig_id:05d}"
+
+def obtener_proximo_codigo_ea():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT MAX(id_empresa) FROM empresas_cliente")
+    max_id = cursor.fetchone()[0]
+    conn.close()
+    sig_id = 1 if max_id is None else max_id + 1
+    return f"EA-{sig_id:04d}"
 
 def obtener_proximo_codigo_rd():
     conn = get_db_connection()
@@ -310,7 +338,7 @@ elif menu_principal == "Acceso a Plataforma":
             modulo_admin = st.sidebar.radio("Módulos:", ["👥 Clientes", "🧾 Recibos de Dinero", "📊 Consolidado Anual"])
 
             # ----------------------------------------------------
-            # MÓDULO 1: GESTIÓN DE CLIENTES Y SUB-EMPRESAS
+            # MÓDULO 1: GESTIÓN DE CLIENTES Y SUB-EMPRESAS (IDENTIFICADOR EA-XXXX)
             # ----------------------------------------------------
             if modulo_admin == "👥 Clientes":
                 st.subheader("👥 Módulo de Gestión de Clientes y Sub-Empresas")
@@ -322,13 +350,14 @@ elif menu_principal == "Acceso a Plataforma":
                     "📁 Subcarpetas por Empresa y Cobros"
                 ])
 
-                # 1. INGRESAR NUEVO CLIENTE
+                # 1. INGRESAR NUEVO CLIENTE (ASIGNA CLI-XXXX Y EA-XXXX)
                 with tab_ingreso:
                     if st.session_state.mensaje_exito:
                         st.success(st.session_state.mensaje_exito)
                         st.session_state.mensaje_exito = ""
 
                     cod_sugerido = obtener_proximo_codigo_id()
+                    ea_sugerido = obtener_proximo_codigo_ea()
 
                     with st.form("form_nuevo_cliente", clear_on_submit=True):
                         st.markdown('<div class="section-header">📌 1. Antecedentes del Cliente (Titular)</div>', unsafe_allow_html=True)
@@ -357,7 +386,8 @@ elif menu_principal == "Acceso a Plataforma":
                         tipo_cuenta_sel = b2.selectbox("Tipo de Cuenta *", OPCIONES_TIPO_CUENTA)
                         num_cuenta_input = b3.text_input("Número de Cuenta Bancaria *")
 
-                        st.markdown('<div class="section-header">🏢 3. Primera Empresa o Rubro Asociado</div>', unsafe_allow_html=True)
+                        st.markdown('<div class="section-header">🏢 3. Primera Empresa o Rubro Asociado (Código Inicial EA)</div>', unsafe_allow_html=True)
+                        st.text_input("ID Empresa Asociada (Autogenerado):", value=ea_sugerido, disabled=True)
 
                         c8, c9 = st.columns(2)
                         razon_soc = c8.text_input("Razón Social / Nombre Fantasía Empresa *")
@@ -419,20 +449,20 @@ elif menu_principal == "Acceso a Plataforma":
 
                                 cursor.execute("""
                                     INSERT INTO empresas_cliente (
-                                        codigo_id_fk, rut_empresa, razon_social, rubro_giro,
+                                        codigo_ea, codigo_id_fk, rut_empresa, razon_social, rubro_giro,
                                         fecha_inicio_actividades, clave_sii, clave_certificado, monto_honorarios_base, observaciones
-                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 """, (
-                                    cod_un, rut_emp, razon_soc, rubro_gir,
+                                    ea_sugerido, cod_un, rut_emp, razon_soc, rubro_gir,
                                     str(f_inic_emp), clv_sii_e, clv_cert_e, hono_base_e, obs
                                 ))
                                 conn.commit()
                                 conn.close()
 
-                                st.session_state.mensaje_exito = f"✅ Cliente '{nombre_comp_titular}' ({tipo_cli_sel}) registrado con éxito (ID: {cod_un})"
+                                st.session_state.mensaje_exito = f"✅ Cliente '{nombre_comp_titular}' registrado con éxito. Empresa Creada con ID: {ea_sugerido}"
                                 st.rerun()
 
-                # 2. EDITAR CLIENTE Y VINCULAR NUEVA EMPRESA COMPLETA
+                # 2. EDITAR O AÑADIR SUB-EMPRESAS SIN PISAR AL TITULAR
                 with tab_editar:
                     st.markdown("### ✏️ Gestión, Edición y Bajas de Clientes")
                     
@@ -447,12 +477,14 @@ elif menu_principal == "Acceso a Plataforma":
                         if cliente_a_editar:
                             cod_id_edit = cliente_a_editar.split(" | ")[0]
                             
-                            subtab1, subtab2, subtab_del = st.tabs([
-                                "📌 Modificar Datos del Cliente",
-                                "➕ Registrar Nueva Empresa",
+                            subtab1, subtab2, subtab_edit_emp, subtab_del = st.tabs([
+                                "📌 Modificar Datos del Cliente Titular",
+                                "➕ Registrar Nueva Empresa (Asigna nuevo EA-XXXX)",
+                                "✏️ Modificar Empresa Asociada Existente (EA-XXXX)",
                                 "🗑️ Eliminar Cliente de la Plataforma"
                             ])
 
+                            # SUBTAB 1: EDITAR DATOS DEL CLIENTE TITULAR
                             with subtab1:
                                 conn = get_db_connection()
                                 cursor = conn.cursor()
@@ -467,7 +499,7 @@ elif menu_principal == "Acceso a Plataforma":
 
                                 if e:
                                     with st.form("form_edit_titular_completo"):
-                                        st.markdown("#### 👤 Antecedentes Personales")
+                                        st.markdown("#### 👤 Antecedentes Personales del Titular")
                                         c_e1, c_e2 = st.columns(2)
                                         ed_nom = c_e1.text_input("Nombres", value=e[0] if e[0] else "")
                                         ed_ape = c_e2.text_input("Apellidos", value=e[1] if e[1] else "")
@@ -502,7 +534,7 @@ elif menu_principal == "Acceso a Plataforma":
 
                                         ed_obs = st.text_area("Observaciones", value=e[12] if e[12] else "")
 
-                                        if st.form_submit_button("💾 Guardar Cambios del Cliente"):
+                                        if st.form_submit_button("💾 Guardar Cambios del Titular"):
                                             nom_comp = f"{ed_nom} {ed_ape}".strip()
                                             conn = get_db_connection()
                                             cursor = conn.cursor()
@@ -519,11 +551,13 @@ elif menu_principal == "Acceso a Plataforma":
                                             ))
                                             conn.commit()
                                             conn.close()
-                                            st.success("✅ Todos los datos del cliente han sido actualizados con éxito.")
+                                            st.success("✅ Datos del titular primario actualizados correctamente.")
                                             st.rerun()
 
+                            # SUBTAB 2: REGISTRAR NUEVA EMPRESA ASOCIADA CON ID UNICO EA-XXXX
                             with subtab2:
-                                st.markdown(f"#### 🏢 Añadir Nueva Empresa o Rubro Asociado al Cliente `{cod_id_edit}`")
+                                nuevo_ea_codigo = obtener_proximo_codigo_ea()
+                                st.markdown(f"#### 🏢 Añadir Nueva Empresa Asociada con ID `{nuevo_ea_codigo}`")
                                 
                                 conn = get_db_connection()
                                 cursor = conn.cursor()
@@ -532,8 +566,8 @@ elif menu_principal == "Acceso a Plataforma":
                                 conn.close()
                                 tipo_cli_def = t_actual[0] if (t_actual and t_actual[0] in OPCIONES_TIPO_CLIENTE) else "Servicio Full"
 
-                                with st.form("form_nueva_subempresa_completa", clear_on_submit=True):
-                                    st.markdown('<div class="section-header">🏢 Antecedentes de la Nueva Empresa / Rubro</div>', unsafe_allow_html=True)
+                                with st.form("form_nueva_subempresa_ea", clear_on_submit=True):
+                                    st.text_input("ID Empresa Asociada (EA):", value=nuevo_ea_codigo, disabled=True)
                                     
                                     idx_tipo_v = OPCIONES_TIPO_CLIENTE.index(tipo_cli_def)
                                     n_tipo_cliente = st.selectbox("Clasificación Tipo de Cliente *", OPCIONES_TIPO_CLIENTE, index=idx_tipo_v)
@@ -561,19 +595,19 @@ elif menu_principal == "Acceso a Plataforma":
                                     n_obs = st.text_area("Observaciones Adicionales")
 
                                     st.divider()
-                                    if st.form_submit_button("➕ Registrar Nueva Empresa y Actualizar Cliente"):
+                                    if st.form_submit_button("➕ Registrar Nueva Empresa Asociada"):
                                         if n_razon and n_rut:
                                             conn = get_db_connection()
                                             cursor = conn.cursor()
                                             
                                             cursor.execute("""
                                                 INSERT INTO empresas_cliente (
-                                                    codigo_id_fk, rut_empresa, razon_social, rubro_giro,
+                                                    codigo_ea, codigo_id_fk, rut_empresa, razon_social, rubro_giro,
                                                     fecha_inicio_actividades, clave_sii, clave_certificado,
                                                     monto_honorarios_base, observaciones
-                                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                             """, (
-                                                cod_id_edit, n_rut, n_razon, n_rubro,
+                                                nuevo_ea_codigo, cod_id_edit, n_rut, n_razon, n_rubro,
                                                 str(n_f_inicio), n_clv_sii, n_clv_cert, n_hono_base, n_obs
                                             ))
                                             
@@ -584,11 +618,86 @@ elif menu_principal == "Acceso a Plataforma":
                                             conn.commit()
                                             conn.close()
                                             
-                                            st.success(f"✅ Sub-Empresa '{n_razon}' asociada exitosamente al cliente {cod_id_edit}.")
+                                            st.success(f"✅ Empresa Asociada `{nuevo_ea_codigo}` ({n_razon}) añadida con éxito.")
                                             st.rerun()
                                         else:
                                             st.error("❌ Razón Social y RUT de Empresa son obligatorios.")
 
+                            # SUBTAB 3: MODIFICAR EXCLUSIVAMENTE LA SUB-EMPRESA SELECCIONADA POR SU CÓDIGO EA-XXXX
+                            with subtab_edit_emp:
+                                st.markdown("#### ✏️ Modificación Exclusiva de Empresa Asociada")
+                                
+                                conn = get_db_connection()
+                                df_sub_emp = pd.read_sql_query("""
+                                    SELECT codigo_ea, razon_social, rut_empresa, rubro_giro, fecha_inicio_actividades,
+                                           clave_sii, clave_certificado, monto_honorarios_base, observaciones
+                                    FROM empresas_cliente WHERE codigo_id_fk = ?
+                                """, conn, params=(cod_id_edit,))
+                                conn.close()
+
+                                if not df_sub_emp.empty:
+                                    lista_sub_ea = [f"{row['codigo_ea']} | {row['razon_social']} (RUT: {row['rut_empresa']})" for _, row in df_sub_emp.iterrows()]
+                                    emp_ea_seleccionada = st.selectbox("🔍 Seleccione la Empresa Asociada a Modificar:", lista_sub_ea, key="sel_ea_sub_edit")
+                                    
+                                    if emp_ea_seleccionada:
+                                        cod_ea_actual = emp_ea_seleccionada.split(" | ")[0]
+                                        datos_ea = df_sub_emp[df_sub_emp['codigo_ea'] == cod_ea_actual].iloc[0]
+
+                                        with st.form("form_update_subempresa_exclusiva"):
+                                            st.info(f"Modificando únicamente la fila correspondiente a la ID: **{cod_ea_actual}**")
+                                            
+                                            c_m1, c_m2 = st.columns(2)
+                                            m_razon = c_m1.text_input("Razón Social / Nombre Fantasía Empresa", value=str(datos_ea['razon_social']))
+                                            m_rut = c_m2.text_input("RUT Empresa", value=str(datos_ea['rut_empresa']))
+
+                                            c_m3, c_m4 = st.columns(2)
+                                            m_rubro = c_m3.text_input("Rubro / Giro Comercial", value=str(datos_ea['rubro_giro']))
+                                            
+                                            # Intentar parsear fecha cargada
+                                            fecha_def = datetime.date.today()
+                                            if datos_ea['fecha_inicio_actividades']:
+                                                try:
+                                                    fecha_def = datetime.datetime.strptime(str(datos_ea['fecha_inicio_actividades']), "%Y-%m-%d").date()
+                                                except ValueError:
+                                                    pass
+
+                                            m_f_inicio = c_m4.date_input(
+                                                "Fecha Inicio Actividades SII",
+                                                value=fecha_def,
+                                                min_value=FECHA_MINIMA_2010,
+                                                max_value=FECHA_MAXIMA_FUTURO,
+                                                format="DD/MM/YYYY"
+                                            )
+
+                                            c_m5, c_m6, c_m7 = st.columns(3)
+                                            m_clv_sii = c_m5.text_input("Clave SII Empresa", value=str(datos_ea['clave_sii']), type="password")
+                                            m_clv_cert = c_m6.text_input("Clave Certificado Electrónico", value=str(datos_ea['clave_certificado']), type="password")
+                                            m_hono_base = c_m7.number_input("Honorarios Base Empresa ($ CLP)", value=float(datos_ea['monto_honorarios_base']), min_value=0.0)
+
+                                            m_obs = st.text_area("Observaciones Adicionales", value=str(datos_ea['observaciones']))
+
+                                            if st.form_submit_button(f"💾 Actualizar Solo Empresa {cod_ea_actual}"):
+                                                conn = get_db_connection()
+                                                cursor = conn.cursor()
+                                                cursor.execute("""
+                                                    UPDATE empresas_cliente
+                                                    SET razon_social = ?, rut_empresa = ?, rubro_giro = ?,
+                                                        fecha_inicio_actividades = ?, clave_sii = ?, clave_certificado = ?,
+                                                        monto_honorarios_base = ?, observaciones = ?
+                                                    WHERE codigo_ea = ?
+                                                """, (
+                                                    m_razon, m_rut, m_rubro, str(m_f_inicio),
+                                                    m_clv_sii, m_clv_cert, m_hono_base, m_obs, cod_ea_actual
+                                                ))
+                                                conn.commit()
+                                                conn.close()
+
+                                                st.success(f"✅ Empresa `{cod_ea_actual}` actualizada correctamente sin alterar al cliente titular.")
+                                                st.rerun()
+                                else:
+                                    st.info("Este cliente no registra empresas asociadas para modificar.")
+
+                            # SUBTAB 4: ELIMINAR CLIENTE
                             with subtab_del:
                                 st.markdown("#### ⚠️ Zona de Eliminación Definitiva de Cliente")
                                 st.warning(f"Atención: Está a punto de eliminar al cliente con ID `{cod_id_edit}`. Esta acción no se puede deshacer.")
@@ -620,17 +729,15 @@ elif menu_principal == "Acceso a Plataforma":
                                             st.info("Operación cancelada. El cliente permanece intacto.")
                                             st.rerun()
 
-                # 3. VISTA GENERAL
+                # 3. VISTA GENERAL (CON CÓDIGOS ID Y EA-XXXX)
                 with tab_tabla:
                     conn = get_db_connection()
                     df_vista = pd.read_sql_query("""
                         SELECT c.codigo_id as ID_Cliente, 
+                               COALESCE(e.codigo_ea, 'N/A') as ID_Empresa_EA,
                                COALESCE(c.nombre_cliente, c.nombres_cliente || ' ' || c.apellidos_cliente) as Titular, 
                                (c.codigo_pais || ' ' || c.num_contacto) as Celular,
                                c.tipo_cliente as Clasificacion,
-                               c.banco_nombre as Banco_Pago,
-                               c.banco_tipo_cuenta as Tipo_Cuenta,
-                               c.banco_num_cuenta as Num_Cuenta,
                                e.razon_social as Empresa, e.rut_empresa as RUT_Empresa, c.correo_electronico as Correo
                         FROM ficha_ingreso_cliente c
                         LEFT JOIN empresas_cliente e ON c.codigo_id = e.codigo_id_fk
@@ -638,7 +745,7 @@ elif menu_principal == "Acceso a Plataforma":
                     conn.close()
                     st.dataframe(df_vista, use_container_width=True)
 
-                # 4. SUBCARPETAS DIGITALES Y COBROS (CON BOTONES GUARDAR, MODIFICAR Y ENVIAR)
+                # 4. SUBCARPETAS DIGITALES Y COBROS POR EA-XXXX
                 with tab_carpetas:
                     st.markdown("### 📁 Carpeta Digital y Emisión de Cobros por Sub-Empresa")
                     conn = get_db_connection()
@@ -654,18 +761,18 @@ elif menu_principal == "Acceso a Plataforma":
                             
                             conn = get_db_connection()
                             cursor = conn.cursor()
-                            cursor.execute("SELECT id_empresa, razon_social, rut_empresa, rubro_giro, monto_honorarios_base FROM empresas_cliente WHERE codigo_id_fk = ?", (cod_id_sel,))
+                            cursor.execute("SELECT id_empresa, codigo_ea, razon_social, rut_empresa, rubro_giro, monto_honorarios_base FROM empresas_cliente WHERE codigo_id_fk = ?", (cod_id_sel,))
                             empresas_del_cliente = cursor.fetchall()
                             conn.close()
 
                             if empresas_del_cliente:
                                 st.markdown("#### 📂 Empresas / Rubros Asociados a este Cliente:")
                                 
-                                nombres_tabs = [f"🏢 {emp[1]} ({emp[3]})" for emp in empresas_del_cliente]
+                                nombres_tabs = [f"🏢 {emp[1]} - {emp[2]}" for emp in empresas_del_cliente]
                                 tabs_empresas = st.tabs(nombres_tabs)
 
                                 for index, tab_emp in enumerate(tabs_empresas):
-                                    id_emp, razon, rut_e, rubro, hono_base = empresas_del_cliente[index]
+                                    id_emp, cod_ea, razon, rut_e, rubro, hono_base = empresas_del_cliente[index]
                                     hono_base_val = hono_base if hono_base is not None else 0.0
                                     
                                     key_lock = f"bloqueado_{id_emp}"
@@ -677,12 +784,12 @@ elif menu_principal == "Acceso a Plataforma":
                                     with tab_emp:
                                         st.markdown(f"""
                                         <div class="subfolder-card">
-                                            <h4>🏢 Subcarpeta: {razon}</h4>
+                                            <h4>🏢 Subcarpeta: [{cod_ea}] {razon}</h4>
                                             <p><b>RUT Empresa:</b> {rut_e} | <b>Rubro/Giro:</b> {rubro} | <b>Honorarios Base:</b> ${hono_base_val:,.0f} CLP</p>
                                         </div>
                                         """, unsafe_allow_html=True)
 
-                                        with st.expander(f"⚙️ Gestión de Cobro Mensual para {razon}", expanded=True):
+                                        with st.expander(f"⚙️ Gestión de Cobro Mensual para {razon} ({cod_ea})", expanded=True):
                                             if is_disabled:
                                                 st.warning("🔒 **Los campos están bloqueados (Guardados).** Presione 'Modificar' para editar o 'Enviar' para publicar al cliente.")
                                             else:
@@ -778,6 +885,7 @@ elif menu_principal == "Acceso a Plataforma":
                         COALESCE(s.codigo_rd, 'RD-0000') as ID_Pago,
                         c.codigo_id as ID_Cliente,
                         COALESCE(c.nombre_cliente, c.nombres_cliente || ' ' || c.apellidos_cliente) as Cliente,
+                        COALESCE(e.codigo_ea, 'N/A') as ID_EA,
                         e.razon_social as Sub_Empresa,
                         COALESCE(s.periodo_cobro, 'N/A') as Periodo,
                         s.monto_total as Monto_Total,
@@ -834,6 +942,7 @@ elif menu_principal == "Acceso a Plataforma":
                         detalles_servicios.append({
                             "ID Recibo": r['ID_Pago'],
                             "Cliente": r['Cliente'],
+                            "ID Empresa (EA)": r['ID_EA'],
                             "Sub-Empresa": r['Sub_Empresa'],
                             "Periodo": r['Periodo'],
                             "Total Cobrado": f"${r['Monto_Total']:,.0f}",
@@ -854,7 +963,7 @@ elif menu_principal == "Acceso a Plataforma":
                 st.subheader("📊 Consolidado Anual de Recaudación")
 
     # ======================================
-    # ENTORNO CLIENTE MULTIEMPRESA (PAGOS PROXIMOS Y HONORARIOS OBLIGATORIOS)
+    # ENTORNO CLIENTE MULTIEMPRESA
     # ======================================
     else:
         st.subheader("🔑 Portal del Cliente - Mis Empresas y Selección de Pagos Próximos")
@@ -872,19 +981,19 @@ elif menu_principal == "Acceso a Plataforma":
 
                 conn = get_db_connection()
                 cursor = conn.cursor()
-                cursor.execute("SELECT id_empresa, razon_social, rubro_giro, rut_empresa FROM empresas_cliente WHERE codigo_id_fk = ?", (cli_found[0],))
+                cursor.execute("SELECT id_empresa, codigo_ea, razon_social, rubro_giro, rut_empresa FROM empresas_cliente WHERE codigo_id_fk = ?", (cli_found[0],))
                 mis_empresas = cursor.fetchall()
                 conn.close()
 
                 if mis_empresas:
                     st.markdown("### 🏢 Seleccione su Empresa para revisar o realizar abonos:")
-                    tabs_cli_emp = st.tabs([f"🏢 {emp[1]} ({emp[2]})" for emp in mis_empresas])
+                    tabs_cli_emp = st.tabs([f"🏢 [{emp[1]}] {emp[2]}" for emp in mis_empresas])
 
                     for idx, t_emp in enumerate(tabs_cli_emp):
-                        id_e, r_soc, rub, rut_e = mis_empresas[idx]
+                        id_e, cod_ea, r_soc, rub, rut_e = mis_empresas[idx]
                         
                         with t_emp:
-                            st.info(f"**Empresa:** {r_soc} | **RUT:** {rut_e} | **Giro:** {rub}")
+                            st.info(f"**ID Empresa:** {cod_ea} | **Razón Social:** {r_soc} | **RUT:** {rut_e} | **Giro:** {rub}")
 
                             conn = get_db_connection()
                             cursor = conn.cursor()
@@ -920,7 +1029,6 @@ elif menu_principal == "Acceso a Plataforma":
                                     col_p1, col_p2 = st.columns(2)
 
                                     with col_p1:
-                                        # REGULA DE HONORARIOS OBLIGATORIOS EN EL PRIMER PAGO
                                         if m_hono > 0:
                                             if p_hono == 0:
                                                 st.checkbox(f"💼 Honorarios Contables: ${m_hono:,.0f} CLP (OBLIGATORIO PRIMER PAGO)", value=True, disabled=True, key=f"c_h_{id_serv}")
