@@ -102,7 +102,6 @@ OPCIONES_PERIODOS = [
     "Julio 2026", "Agosto 2026", "Septiembre 2026", "Octubre 2026", "Noviembre 2026", "Diciembre 2026"
 ]
 
-# Configuración de límites de calendario (Año 2010 en adelante)
 FECHA_MINIMA_2010 = datetime.date(2010, 1, 1)
 FECHA_MAXIMA_FUTURO = datetime.date(2035, 12, 31)
 
@@ -179,20 +178,6 @@ def init_db():
             FOREIGN KEY (codigo_id_fk) REFERENCES ficha_ingreso_cliente(codigo_id)
         )
     """)
-
-    # Migración dinámica para empresas_cliente
-    cursor.execute("PRAGMA table_info(empresas_cliente)")
-    cols_emp = [c[1] for c in cursor.fetchall()]
-    
-    col_nuevas_emp = {
-        "clave_sii": "TEXT DEFAULT ''",
-        "clave_certificado": "TEXT DEFAULT ''",
-        "observaciones": "TEXT DEFAULT ''"
-    }
-
-    for col, col_type in col_nuevas_emp.items():
-        if col not in cols_emp:
-            cursor.execute(f"ALTER TABLE empresas_cliente ADD COLUMN {col} {col_type}")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS servicios_mensuales_cliente (
@@ -381,7 +366,6 @@ elif menu_principal == "Acceso a Plataforma":
                         c10, c11 = st.columns(2)
                         rubro_gir = c10.text_input("Rubro / Giro Comercial * (Ej: Calzado, Transporte, etc.)")
                         
-                        # CALENDARIO PERMITIDO DESDE EL AÑO 2010
                         f_inic_emp = c11.date_input(
                             "Fecha Inicio Actividades SII",
                             value=datetime.date.today(),
@@ -448,9 +432,9 @@ elif menu_principal == "Acceso a Plataforma":
                                 st.session_state.mensaje_exito = f"✅ Cliente '{nombre_comp_titular}' ({tipo_cli_sel}) registrado con éxito (ID: {cod_un})"
                                 st.rerun()
 
-                # 2. EDITAR CLIENTE Y VINCULAR NUEVA EMPRESA COMPLETA (CON CAMPO TIPO CLIENTE Y DESDE 2010)
+                # 2. EDITAR CLIENTE Y VINCULAR NUEVA EMPRESA COMPLETA
                 with tab_editar:
-                    st.markdown("### Gestión, Edición y Bajas de Clientes")
+                    st.markdown("### ✏️ Gestión, Edición y Bajas de Clientes")
                     
                     conn = get_db_connection()
                     df_edit_list = pd.read_sql_query("SELECT codigo_id, nombres_cliente, apellidos_cliente, run_cliente FROM ficha_ingreso_cliente", conn)
@@ -466,10 +450,9 @@ elif menu_principal == "Acceso a Plataforma":
                             subtab1, subtab2, subtab_del = st.tabs([
                                 "📌 Modificar Datos del Cliente",
                                 "➕ Registrar Nueva Empresa",
-                                "🗑️ Eliminar Cliente"
+                                "🗑️ Eliminar Cliente de la Plataforma"
                             ])
 
-                            # SUBTAB 1: EDITAR DATOS DEL CLIENTE
                             with subtab1:
                                 conn = get_db_connection()
                                 cursor = conn.cursor()
@@ -539,7 +522,6 @@ elif menu_principal == "Acceso a Plataforma":
                                             st.success("✅ Todos los datos del cliente han sido actualizados con éxito.")
                                             st.rerun()
 
-                            # SUBTAB 2: REGISTRAR NUEVA EMPRESA COMPLETA SEGÚN LA IMAGEN
                             with subtab2:
                                 st.markdown(f"#### 🏢 Añadir Nueva Empresa o Rubro Asociado al Cliente `{cod_id_edit}`")
                                 
@@ -553,7 +535,6 @@ elif menu_principal == "Acceso a Plataforma":
                                 with st.form("form_nueva_subempresa_completa", clear_on_submit=True):
                                     st.markdown('<div class="section-header">🏢 Antecedentes de la Nueva Empresa / Rubro</div>', unsafe_allow_html=True)
                                     
-                                    # Clasificación por Tipo de Cliente asociada a la sub-empresa
                                     idx_tipo_v = OPCIONES_TIPO_CLIENTE.index(tipo_cli_def)
                                     n_tipo_cliente = st.selectbox("Clasificación Tipo de Cliente *", OPCIONES_TIPO_CLIENTE, index=idx_tipo_v)
 
@@ -562,9 +543,8 @@ elif menu_principal == "Acceso a Plataforma":
                                     n_rut = ce2.text_input("RUT Empresa *")
 
                                     ce3, ce4 = st.columns(2)
-                                    n_rubro = ce3.text_input("Rubro / Giro Comercial * (Ej: Calzado, Transporte, etc.)")
+                                    n_rubro = ce3.text_input("Rubro / Giro Comercial *")
                                     
-                                    # FECHA INICIO DE ACTIVIDADES DESDE EL AÑO 2010
                                     n_f_inicio = ce4.date_input(
                                         "Fecha Inicio Actividades SII",
                                         value=datetime.date.today(),
@@ -586,7 +566,6 @@ elif menu_principal == "Acceso a Plataforma":
                                             conn = get_db_connection()
                                             cursor = conn.cursor()
                                             
-                                            # 1. Insertar la nueva empresa
                                             cursor.execute("""
                                                 INSERT INTO empresas_cliente (
                                                     codigo_id_fk, rut_empresa, razon_social, rubro_giro,
@@ -598,7 +577,6 @@ elif menu_principal == "Acceso a Plataforma":
                                                 str(n_f_inicio), n_clv_sii, n_clv_cert, n_hono_base, n_obs
                                             ))
                                             
-                                            # 2. Actualizar el tipo de cliente en el titular
                                             cursor.execute("""
                                                 UPDATE ficha_ingreso_cliente SET tipo_cliente = ? WHERE codigo_id = ?
                                             """, (n_tipo_cliente, cod_id_edit))
@@ -606,7 +584,7 @@ elif menu_principal == "Acceso a Plataforma":
                                             conn.commit()
                                             conn.close()
                                             
-                                            st.success(f"✅ Sub-Empresa '{n_razon}' asociada exitosamente al cliente {cod_id_edit} con clasificación '{n_tipo_cliente}'.")
+                                            st.success(f"✅ Sub-Empresa '{n_razon}' asociada exitosamente al cliente {cod_id_edit}.")
                                             st.rerun()
                                         else:
                                             st.error("❌ Razón Social y RUT de Empresa son obligatorios.")
@@ -619,7 +597,7 @@ elif menu_principal == "Acceso a Plataforma":
                                     st.session_state.confirmar_borrado_id = cod_id_edit
 
                                 if st.session_state.confirmar_borrado_id == cod_id_edit:
-                                    st.error(f"🚨 **CONFIRMACIÓN REQUERIDA:** ¿Está completamente seguro de eliminar al cliente `{cod_id_edit}`?")
+                                    st.error(f"🚨 **CONFIRMACIÓN REQUERIDA:** ¿Está completamente seguro de que desea eliminar al cliente `{cod_id_edit}`?")
                                     col_del1, col_del2 = st.columns(2)
                                     
                                     with col_del1:
@@ -660,7 +638,7 @@ elif menu_principal == "Acceso a Plataforma":
                     conn.close()
                     st.dataframe(df_vista, use_container_width=True)
 
-                # 4. SUBCARPETAS DIGITALES Y COBROS CON TOTALIZACIÓN Y ENVIAR
+                # 4. SUBCARPETAS DIGITALES Y COBROS (CON BOTONES GUARDAR, MODIFICAR Y ENVIAR)
                 with tab_carpetas:
                     st.markdown("### 📁 Carpeta Digital y Emisión de Cobros por Sub-Empresa")
                     conn = get_db_connection()
@@ -690,6 +668,12 @@ elif menu_principal == "Acceso a Plataforma":
                                     id_emp, razon, rut_e, rubro, hono_base = empresas_del_cliente[index]
                                     hono_base_val = hono_base if hono_base is not None else 0.0
                                     
+                                    key_lock = f"bloqueado_{id_emp}"
+                                    if key_lock not in st.session_state:
+                                        st.session_state[key_lock] = False
+
+                                    is_disabled = st.session_state[key_lock]
+
                                     with tab_emp:
                                         st.markdown(f"""
                                         <div class="subfolder-card">
@@ -698,34 +682,39 @@ elif menu_principal == "Acceso a Plataforma":
                                         </div>
                                         """, unsafe_allow_html=True)
 
-                                        with st.expander(f"➕ Emitir y Enviar Cobro Mensual a {razon}", expanded=True):
+                                        with st.expander(f"⚙️ Gestión de Cobro Mensual para {razon}", expanded=True):
+                                            if is_disabled:
+                                                st.warning("🔒 **Los campos están bloqueados (Guardados).** Presione 'Modificar' para editar o 'Enviar' para publicar al cliente.")
+                                            else:
+                                                st.info("✏️ **Modo Edición Activo.** Complete los montos y haga clic en 'Guardar' para congelar los datos.")
+
                                             c_f1, c_f2, c_f3 = st.columns(3)
                                             
-                                            periodo_sel = c_f1.selectbox("📅 Periodo del Servicio *", OPCIONES_PERIODOS, key=f"per_{id_emp}")
-                                            fecha_cobro_sel = c_f2.date_input("📅 Fecha de Emisión *", value=datetime.date.today(), format="DD/MM/YYYY", key=f"fc_{id_emp}")
-                                            fecha_limite_sel = c_f3.date_input("⏰ Fecha Límite de Pago *", value=datetime.date.today() + datetime.timedelta(days=15), format="DD/MM/YYYY", key=f"fl_{id_emp}")
+                                            periodo_sel = c_f1.selectbox("📅 Periodo del Servicio *", OPCIONES_PERIODOS, key=f"per_{id_emp}", disabled=is_disabled)
+                                            fecha_cobro_sel = c_f2.date_input("📅 Fecha de Emisión *", value=datetime.date.today(), format="DD/MM/YYYY", key=f"fc_{id_emp}", disabled=is_disabled)
+                                            fecha_limite_sel = c_f3.date_input("⏰ Fecha Límite de Pago *", value=datetime.date.today() + datetime.timedelta(days=15), format="DD/MM/YYYY", key=f"fl_{id_emp}", disabled=is_disabled)
 
                                             opciones_totales = ["Honorarios", "IVA", "Renta Anual", "Imposiciones", "Certificados", "Otros"]
-                                            servicios_a_aperturar = st.multiselect("Servicios a incluir en este cobro:", opciones_totales, default=["Honorarios"], key=f"ms_{id_emp}")
+                                            servicios_a_aperturar = st.multiselect("Servicios a incluir en este cobro:", opciones_totales, default=["Honorarios"], key=f"ms_{id_emp}", disabled=is_disabled)
 
                                             monto_iva, monto_renta, monto_prev, monto_hono_cobro, monto_cert, monto_otros = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
                                             col_m1, col_m2 = st.columns(2)
                                             with col_m1:
                                                 if "Honorarios" in servicios_a_aperturar:
-                                                    monto_hono_cobro = st.number_input("Honorarios ($ CLP):", value=float(hono_base_val), min_value=0.0, key=f"mh_{id_emp}")
+                                                    monto_hono_cobro = st.number_input("Honorarios ($ CLP):", value=float(hono_base_val), min_value=0.0, key=f"mh_{id_emp}", disabled=is_disabled)
                                                 if "IVA" in servicios_a_aperturar:
-                                                    monto_iva = st.number_input("IVA ($ CLP):", min_value=0.0, key=f"mi_{id_emp}")
+                                                    monto_iva = st.number_input("IVA ($ CLP):", min_value=0.0, key=f"mi_{id_emp}", disabled=is_disabled)
                                                 if "Renta Anual" in servicios_a_aperturar:
-                                                    monto_renta = st.number_input("Renta ($ CLP):", min_value=0.0, key=f"mr_{id_emp}")
+                                                    monto_renta = st.number_input("Renta ($ CLP):", min_value=0.0, key=f"mr_{id_emp}", disabled=is_disabled)
                                             
                                             with col_m2:
                                                 if "Imposiciones" in servicios_a_aperturar:
-                                                    monto_prev = st.number_input("Imposiciones ($ CLP):", min_value=0.0, key=f"mp_{id_emp}")
+                                                    monto_prev = st.number_input("Imposiciones ($ CLP):", min_value=0.0, key=f"mp_{id_emp}", disabled=is_disabled)
                                                 if "Certificados" in servicios_a_aperturar:
-                                                    monto_cert = st.number_input("Certificados ($ CLP):", min_value=0.0, key=f"mc_{id_emp}")
+                                                    monto_cert = st.number_input("Certificados ($ CLP):", min_value=0.0, key=f"mc_{id_emp}", disabled=is_disabled)
                                                 if "Otros" in servicios_a_aperturar:
-                                                    monto_otros = st.number_input("Otros ($ CLP):", min_value=0.0, key=f"mo_{id_emp}")
+                                                    monto_otros = st.number_input("Otros ($ CLP):", min_value=0.0, key=f"mo_{id_emp}", disabled=is_disabled)
 
                                             total_consolidado_live = monto_iva + monto_renta + monto_prev + monto_hono_cobro + monto_cert + monto_otros
 
@@ -735,31 +724,45 @@ elif menu_principal == "Acceso a Plataforma":
                                                 </div>
                                             """, unsafe_allow_html=True)
 
-                                            st.info("⚠️ Al hacer clic en **'Enviar'**, el cobro se registrará oficialmente con su ID de Recibo (RD) y estará listo para que el cliente lo pague en su portal.")
-                                            
-                                            if st.button(f"🚀 ENVIAR COBRO DEFINITIVO DE {razon}", key=f"btn_send_{id_emp}", type="primary"):
-                                                if total_consolidado_live > 0:
-                                                    cod_rd_nuevo = obtener_proximo_codigo_rd()
-                                                    
-                                                    conn = get_db_connection()
-                                                    cursor = conn.cursor()
-                                                    cursor.execute("""
-                                                        INSERT INTO servicios_mensuales_cliente (
-                                                            codigo_rd, codigo_id_fk, id_empresa_fk, periodo_cobro, fecha_cobro, fecha_limite, tipo_cobro,
-                                                            monto_iva, monto_renta_anual, monto_imposiciones, monto_honorarios,
-                                                            monto_certificados, monto_otros, monto_total, monto_pagado_acumulado, estado_pago
-                                                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                                    """, (
-                                                        cod_rd_nuevo, cod_id_sel, id_emp, periodo_sel, str(fecha_cobro_sel), str(fecha_limite_sel), "Mensual",
-                                                        monto_iva, monto_renta, monto_prev, monto_hono_cobro, monto_cert, monto_otros, total_consolidado_live, 0.0, "Pendiente"
-                                                    ))
-                                                    conn.commit()
-                                                    conn.close()
-                                                    
-                                                    st.success(f"✅ Cobro enviado con éxito con el Identificador de Pago: **{cod_rd_nuevo}** por ${total_consolidado_live:,.0f} CLP")
+                                            btn_col1, btn_col2, btn_col3 = st.columns(3)
+
+                                            with btn_col1:
+                                                if st.button(f"💾 Guardar Datos", key=f"btn_lock_{id_emp}", disabled=is_disabled, use_container_width=True):
+                                                    st.session_state[key_lock] = True
+                                                    st.success("✅ Datos guardados borrador. Campos inactivos.")
                                                     st.rerun()
-                                                else:
-                                                    st.error("El monto total a cobrar debe ser mayor a $0.")
+
+                                            with btn_col2:
+                                                if st.button(f"✏️ Modificar", key=f"btn_unlock_{id_emp}", disabled=not is_disabled, use_container_width=True):
+                                                    st.session_state[key_lock] = False
+                                                    st.info("🔓 Campos activados nuevamente para modificar.")
+                                                    st.rerun()
+
+                                            with btn_col3:
+                                                if st.button(f"🚀 Enviar Cobro", key=f"btn_send_{id_emp}", type="primary", disabled=not is_disabled, use_container_width=True):
+                                                    if total_consolidado_live > 0:
+                                                        cod_rd_nuevo = obtener_proximo_codigo_rd()
+                                                        
+                                                        conn = get_db_connection()
+                                                        cursor = conn.cursor()
+                                                        cursor.execute("""
+                                                            INSERT INTO servicios_mensuales_cliente (
+                                                                codigo_rd, codigo_id_fk, id_empresa_fk, periodo_cobro, fecha_cobro, fecha_limite, tipo_cobro,
+                                                                monto_iva, monto_renta_anual, monto_imposiciones, monto_honorarios,
+                                                                monto_certificados, monto_otros, monto_total, monto_pagado_acumulado, estado_pago
+                                                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                        """, (
+                                                            cod_rd_nuevo, cod_id_sel, id_emp, periodo_sel, str(fecha_cobro_sel), str(fecha_limite_sel), "Mensual",
+                                                            monto_iva, monto_renta, monto_prev, monto_hono_cobro, monto_cert, monto_otros, total_consolidado_live, 0.0, "Pendiente"
+                                                        ))
+                                                        conn.commit()
+                                                        conn.close()
+                                                        
+                                                        st.session_state[key_lock] = False
+                                                        st.success(f"🎉 Cobro **{cod_rd_nuevo}** de ${total_consolidado_live:,.0f} CLP enviado exitosamente al cliente.")
+                                                        st.rerun()
+                                                    else:
+                                                        st.error("El monto total debe ser mayor a $0.")
                             else:
                                 st.warning("Este cliente no tiene empresas asociadas.")
 
@@ -851,7 +854,7 @@ elif menu_principal == "Acceso a Plataforma":
                 st.subheader("📊 Consolidado Anual de Recaudación")
 
     # ======================================
-    # ENTORNO CLIENTE MULTIEMPRESA
+    # ENTORNO CLIENTE MULTIEMPRESA (PAGOS PROXIMOS Y HONORARIOS OBLIGATORIOS)
     # ======================================
     else:
         st.subheader("🔑 Portal del Cliente - Mis Empresas y Selección de Pagos Próximos")
@@ -899,7 +902,7 @@ elif menu_principal == "Acceso a Plataforma":
                             conn.close()
 
                             if cobros_empresa:
-                                st.markdown("#### ⏳ Cobros Pendientes y Próximos a Vencer (Selección de Pago):")
+                                st.markdown("#### ⏳ Cobros Pendientes Emitidos por Administración:")
                                 for c in cobros_empresa:
                                     (id_serv, cod_rd, periodo_c, f_cobro, f_limite, 
                                      m_iva, m_renta, m_prev, m_hono, m_cert, m_otros, m_total, 
@@ -907,8 +910,8 @@ elif menu_principal == "Acceso a Plataforma":
 
                                     st.markdown(f"""
                                     <div class="pay-card">
-                                        <h4>🧾 Identificador de Pago: <span style="color:#2B6CB0;">{cod_rd}</span> | 📅 Periodo: {periodo_c}</h4>
-                                        <p><b>Fecha Límite:</b> <span style="color:red;">{f_limite}</span> | <b>Estado Actual:</b> {st_pago}</p>
+                                        <h4>🧾 Recibo de Dinero: <span style="color:#2B6CB0;">{cod_rd}</span> | 📅 Periodo: {periodo_c}</h4>
+                                        <p><b>Monto Total Cobrado:</b> ${m_total:,.0f} CLP | <b>Fecha Límite:</b> <span style="color:red;">{f_limite}</span> | <b>Estado:</b> {st_pago}</p>
                                     </div>
                                     """, unsafe_allow_html=True)
 
@@ -917,9 +920,10 @@ elif menu_principal == "Acceso a Plataforma":
                                     col_p1, col_p2 = st.columns(2)
 
                                     with col_p1:
+                                        # REGULA DE HONORARIOS OBLIGATORIOS EN EL PRIMER PAGO
                                         if m_hono > 0:
                                             if p_hono == 0:
-                                                st.checkbox(f"💼 Honorarios Contables: ${m_hono:,.0f} CLP (OBLIGATORIO)", value=True, disabled=True, key=f"c_h_{id_serv}")
+                                                st.checkbox(f"💼 Honorarios Contables: ${m_hono:,.0f} CLP (OBLIGATORIO PRIMER PAGO)", value=True, disabled=True, key=f"c_h_{id_serv}")
                                                 monto_abono_actual += m_hono
                                                 pagos_nuevos['hono'] = (m_hono, 'pagado_honorarios')
                                             else:
@@ -933,6 +937,14 @@ elif menu_principal == "Acceso a Plataforma":
                                             else:
                                                 st.success(f"🧾 IVA: ${m_iva:,.0f} CLP [PAGADO]")
 
+                                        if m_renta > 0:
+                                            if p_renta == 0:
+                                                if st.checkbox(f"📊 Renta Anual: ${m_renta:,.0f} CLP", value=False, key=f"c_r_{id_serv}"):
+                                                    monto_abono_actual += m_renta
+                                                    pagos_nuevos['renta'] = (m_renta, 'pagado_renta_anual')
+                                            else:
+                                                st.success(f"📊 Renta Anual: ${m_renta:,.0f} CLP [PAGADO]")
+
                                     with col_p2:
                                         if m_prev > 0:
                                             if p_prev == 0:
@@ -942,21 +954,40 @@ elif menu_principal == "Acceso a Plataforma":
                                             else:
                                                 st.success(f"🏛️ Imposiciones: ${m_prev:,.0f} CLP [PAGADO]")
 
+                                        if m_cert > 0:
+                                            if p_cert == 0:
+                                                if st.checkbox(f"📜 Certificados: ${m_cert:,.0f} CLP", value=False, key=f"c_ce_{id_serv}"):
+                                                    monto_abono_actual += m_cert
+                                                    pagos_nuevos['cert'] = (m_cert, 'pagado_certificados')
+                                            else:
+                                                st.success(f"📜 Certificados: ${m_cert:,.0f} CLP [PAGADO]")
+
+                                        if m_otros > 0:
+                                            if p_otros == 0:
+                                                if st.checkbox(f"📑 Otros Servicios: ${m_otros:,.0f} CLP", value=False, key=f"c_o_{id_serv}"):
+                                                    monto_abono_actual += m_otros
+                                                    pagos_nuevos['otros'] = (m_otros, 'pagado_otros')
+                                            else:
+                                                st.success(f"📑 Otros Servicios: ${m_otros:,.0f} CLP [PAGADO]")
+
                                     st.markdown(f"""
                                     <div class="total-box-live">
-                                        💳 Monto Seleccionado A Pagar: ${monto_abono_actual:,.0f} CLP
+                                        💳 Monto Seleccionado a Pagar en este Abono: ${monto_abono_actual:,.0f} CLP
                                     </div>
                                     """, unsafe_allow_html=True)
 
-                                    if st.button(f"💳 Procesar Pago para {cod_rd} (${monto_abono_actual:,.0f} CLP)", key=f"btn_pay_{id_serv}"):
+                                    if st.button(f"💳 Procesar Pago para {cod_rd} (${monto_abono_actual:,.0f} CLP)", key=f"btn_pay_{id_serv}", type="primary"):
                                         up_hono = 1 if ('hono' in pagos_nuevos or p_hono == 1) else 0
                                         up_iva = 1 if ('iva' in pagos_nuevos or p_iva == 1) else 0
                                         up_prev = 1 if ('prev' in pagos_nuevos or p_prev == 1) else 0
+                                        up_renta = 1 if ('renta' in pagos_nuevos or p_renta == 1) else 0
+                                        up_cert = 1 if ('cert' in pagos_nuevos or p_cert == 1) else 0
+                                        up_otros = 1 if ('otros' in pagos_nuevos or p_otros == 1) else 0
 
                                         nuevo_acumulado = m_pagado_acc + monto_abono_actual
 
-                                        total_items = (1 if m_hono>0 else 0) + (1 if m_iva>0 else 0) + (1 if m_prev>0 else 0)
-                                        pagados_items = up_hono + up_iva + up_prev
+                                        total_items = (1 if m_hono>0 else 0) + (1 if m_iva>0 else 0) + (1 if m_prev>0 else 0) + (1 if m_renta>0 else 0) + (1 if m_cert>0 else 0) + (1 if m_otros>0 else 0)
+                                        pagados_items = up_hono + up_iva + up_prev + up_renta + up_cert + up_otros
                                         nuevo_estado = "PAGADO TOTAL" if pagados_items >= total_items else "PAGADO PARCIAL"
 
                                         conn = get_db_connection()
@@ -964,9 +995,10 @@ elif menu_principal == "Acceso a Plataforma":
                                         cursor.execute("""
                                             UPDATE servicios_mensuales_cliente
                                             SET pagado_honorarios = ?, pagado_iva = ?, pagado_imposiciones = ?, 
+                                                pagado_renta_anual = ?, pagado_certificados = ?, pagado_otros = ?,
                                                 monto_pagado_acumulado = ?, estado_pago = ?
                                             WHERE id_servicio = ?
-                                        """, (up_hono, up_iva, up_prev, nuevo_acumulado, nuevo_estado, id_serv))
+                                        """, (up_hono, up_iva, up_prev, up_renta, up_cert, up_otros, nuevo_acumulado, nuevo_estado, id_serv))
                                         conn.commit()
                                         conn.close()
 
