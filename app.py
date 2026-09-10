@@ -23,40 +23,58 @@ st.set_page_config(
     layout="wide"
 )
 
-# Estilos CSS con paleta azul marino y acentos dorados/bronce
+# Estilos CSS que garantizan visibilidad en computadores y celulares
 st.markdown("""
     <style>
+    /* Fondo principal claro */
     .stApp { background-color: #F4F7F9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     
+    /* FORZAR COLOR DE TEXTO VISIBLE EN MÓVILES (Evita textos invisibles por modo oscuro) */
+    .stApp, .stMarkdown, p, span, label, h1, h2, h3, h4, h5, h6, div {
+        color: #1C3B57 !important;
+    }
+
+    /* Textos dentro de formularios y opciones de tipo radio */
+    div[data-testid="stRadioButton"] label, div[data-testid="stMarkdownContainer"] p {
+        color: #1C3B57 !important;
+        font-weight: 600 !important;
+    }
+
+    /* Cajas de entrada de texto */
+    input, select, textarea {
+        color: #000000 !important;
+        background-color: #FFFFFF !important;
+    }
+
     /* Contenedor del Encabezado */
     .header-box { 
         background: linear-gradient(135deg, #0A192F 0%, #1E3A5F 100%); 
-        padding: 20px 30px; 
+        padding: 20px 25px; 
         border-radius: 12px; 
-        color: white; 
-        margin-bottom: 25px;
-        border-bottom: 3px solid #C5A059; /* Linea dorada corporativa */
+        margin-bottom: 20px;
+        border-bottom: 3px solid #C5A059;
         box-shadow: 0px 4px 12px rgba(0,0,0,0.15);
     }
     .header-title-text { 
-        font-size: 26px; 
+        font-size: 24px; 
         font-weight: 700; 
-        color: #FFFFFF; 
+        color: #FFFFFF !important; 
         margin: 0; 
         letter-spacing: 1px;
     }
     .header-sub-text { 
-        font-size: 15px; 
-        color: #D1D5DB; 
+        font-size: 14px; 
+        color: #D1D5DB !important; 
         margin-top: 5px; 
         font-style: italic;
     }
     
-    /* Tarjetas y Secciones */
+    /* Tarjetas de Contenido */
     .folder-card { background-color: #FFFFFF; padding: 20px; border-radius: 10px; border-left: 6px solid #1E3A5F; box-shadow: 0px 2px 8px rgba(0,0,0,0.08); margin-bottom: 15px; }
-    .subfolder-card { background-color: #F7FAFC; padding: 15px; border-radius: 8px; border: 1px solid #E2E8F0; margin-bottom: 10px; }
-    .section-header { background-color: #0A192F; color: white; padding: 10px 15px; border-radius: 6px; font-size: 18px; font-weight: bold; margin-bottom: 15px; margin-top: 10px; border-left: 4px solid #C5A059; }
-    .total-box { background-color: #EBF8FF; border: 2px solid #3182CE; padding: 15px; border-radius: 8px; text-align: center; font-size: 20px; font-weight: bold; color: #2B6CB0; margin-top: 10px; }
+    .subfolder-card { background-color: #FFFFFF; padding: 15px; border-radius: 8px; border: 1px solid #E2E8F0; margin-bottom: 10px; }
+    .section-header { background-color: #0A192F; color: #FFFFFF !important; padding: 10px 15px; border-radius: 6px; font-size: 18px; font-weight: bold; margin-bottom: 15px; margin-top: 10px; border-left: 4px solid #C5A059; }
+    .section-header * { color: #FFFFFF !important; }
+    .total-box { background-color: #EBF8FF; border: 2px solid #3182CE; padding: 15px; border-radius: 8px; text-align: center; font-size: 20px; font-weight: bold; color: #2B6CB0 !important; margin-top: 10px; }
     .pay-card { background-color: #FFFFFF; padding: 20px; border-radius: 10px; border: 1px solid #CBD5E0; margin-bottom: 15px; }
     </style>
 """, unsafe_allow_html=True)
@@ -189,7 +207,7 @@ if "confirmar_borrado_id" not in st.session_state:
 
 ADMINS_AUTORIZADOS = ["juandelahoz@asesoriasdelahoz.com", "admin@juandelahoz.com", "ingri@gmail.com"]
 
-# --- ENCABEZADO SUPERIOR CON LOGO CORPORATIVO A LA DERECHA ---
+# --- ENCABEZADO SUPERIOR CON LOGO CORPORATIVO ---
 col_head_left, col_head_right = st.columns([2.5, 1])
 
 with col_head_left:
@@ -201,15 +219,21 @@ with col_head_left:
     """, unsafe_allow_html=True)
 
 with col_head_right:
-    # Nombre del archivo de imagen cargado en el proyecto
-    NOMBRE_ARCHIVO_LOGO = "logo juan de la hoz.jpg"
-    
-    # Si la imagen existe localmente, la muestra alineada a la derecha con tamaño mediano (230px)
-    if os.path.exists(NOMBRE_ARCHIVO_LOGO):
-        st.image(NOMBRE_ARCHIVO_LOGO, width=230)
+    # Búsqueda adaptativa para el archivo 'logo JH'
+    posibles_nombres_logo = [
+        "logo JH", "logo JH.jpg", "logo JH.png", "logo JH.jpeg",
+        "logo_JH.jpg", "logo_JH.png", "logo juan de la hoz.jpg"
+    ]
+    logo_encontrado = None
+    for nombre in posibles_nombres_logo:
+        if os.path.exists(nombre):
+            logo_encontrado = nombre
+            break
+            
+    if logo_encontrado:
+        st.image(logo_encontrado, use_container_width=True)
     else:
-        # Resguardo visual si aún no se ha colocado la imagen en la carpeta
-        st.info("💡 Coloca la imagen 'logo juan de la hoz.jpg' en la carpeta del proyecto para ver el logo aquí.")
+        st.info("💡 Coloca la imagen 'logo JH' en tu carpeta del proyecto y en GitHub.")
 
 menu_principal = st.selectbox("Navegación Principal", ["Inicio", "Quiénes Somos", "Acceso a Plataforma"], label_visibility="collapsed")
 
