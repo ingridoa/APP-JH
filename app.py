@@ -450,7 +450,7 @@ elif menu_principal == "Acceso a Plataforma":
 
                 # 2. EDITAR CLIENTE Y VINCULAR NUEVA EMPRESA COMPLETA (CON CAMPO TIPO CLIENTE Y DESDE 2010)
                 with tab_editar:
-                    st.markdown("### ✏️ Gestión, Edición y Bajas de Clientes")
+                    st.markdown("### Gestión, Edición y Bajas de Clientes")
                     
                     conn = get_db_connection()
                     df_edit_list = pd.read_sql_query("SELECT codigo_id, nombres_cliente, apellidos_cliente, run_cliente FROM ficha_ingreso_cliente", conn)
@@ -466,7 +466,7 @@ elif menu_principal == "Acceso a Plataforma":
                             subtab1, subtab2, subtab_del = st.tabs([
                                 "📌 Modificar Datos del Cliente",
                                 "➕ Registrar Nueva Empresa",
-                                "🗑️ Eliminar Cliente de la Plataforma"
+                                "🗑️ Eliminar Cliente"
                             ])
 
                             # SUBTAB 1: EDITAR DATOS DEL CLIENTE
@@ -619,7 +619,7 @@ elif menu_principal == "Acceso a Plataforma":
                                     st.session_state.confirmar_borrado_id = cod_id_edit
 
                                 if st.session_state.confirmar_borrado_id == cod_id_edit:
-                                    st.error(f"🚨 **CONFIRMACIÓN REQUERIDA:** ¿Está completamente seguro de que desea eliminar al cliente `{cod_id_edit}`?")
+                                    st.error(f"🚨 **CONFIRMACIÓN REQUERIDA:** ¿Está completamente seguro de eliminar al cliente `{cod_id_edit}`?")
                                     col_del1, col_del2 = st.columns(2)
                                     
                                     with col_del1:
