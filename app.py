@@ -23,7 +23,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Estilos CSS de alta visibilidad y diseño responsivo
+# Estilos CSS de alta visibilidad
 st.markdown("""
     <style>
     .stApp { background-color: #F4F7F9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
@@ -71,8 +71,6 @@ st.markdown("""
     
     .total-box-live { background-color: #EBF8FF; border: 2px solid #3182CE; padding: 15px; border-radius: 8px; text-align: center; font-size: 22px; font-weight: bold; color: #2B6CB0 !important; margin-top: 15px; margin-bottom: 15px; }
     .pay-card { background-color: #FFFFFF; padding: 20px; border-radius: 10px; border: 1px solid #CBD5E0; margin-bottom: 15px; }
-    .metric-card-green { background-color: #E6FFFA; border-left: 5px solid #38A169; padding: 15px; border-radius: 8px; }
-    .metric-card-red { background-color: #FFF5F5; border-left: 5px solid #E53E3E; padding: 15px; border-radius: 8px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -103,6 +101,10 @@ OPCIONES_PERIODOS = [
     "Enero 2026", "Febrero 2026", "Marzo 2026", "Abril 2026", "Mayo 2026", "Junio 2026",
     "Julio 2026", "Agosto 2026", "Septiembre 2026", "Octubre 2026", "Noviembre 2026", "Diciembre 2026"
 ]
+
+# Configuración de límites de calendario (Año 2010 en adelante)
+FECHA_MINIMA_2010 = datetime.date(2010, 1, 1)
+FECHA_MAXIMA_FUTURO = datetime.date(2035, 12, 31)
 
 # ==========================================
 # CONEXIÓN ROBUSTA CON SQLITE
@@ -173,9 +175,24 @@ def init_db():
             clave_sii TEXT DEFAULT '',
             clave_certificado TEXT DEFAULT '',
             monto_honorarios_base REAL DEFAULT 0,
+            observaciones TEXT DEFAULT '',
             FOREIGN KEY (codigo_id_fk) REFERENCES ficha_ingreso_cliente(codigo_id)
         )
     """)
+
+    # Migración dinámica para empresas_cliente
+    cursor.execute("PRAGMA table_info(empresas_cliente)")
+    cols_emp = [c[1] for c in cursor.fetchall()]
+    
+    col_nuevas_emp = {
+        "clave_sii": "TEXT DEFAULT ''",
+        "clave_certificado": "TEXT DEFAULT ''",
+        "observaciones": "TEXT DEFAULT ''"
+    }
+
+    for col, col_type in col_nuevas_emp.items():
+        if col not in cols_emp:
+            cursor.execute(f"ALTER TABLE empresas_cliente ADD COLUMN {col} {col_type}")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS servicios_mensuales_cliente (
@@ -206,20 +223,6 @@ def init_db():
             FOREIGN KEY (codigo_id_fk) REFERENCES ficha_ingreso_cliente(codigo_id)
         )
     """)
-
-    # Migración dinámica de nuevas columnas para Recibos de Dinero y Periodos
-    cursor.execute("PRAGMA table_info(servicios_mensuales_cliente)")
-    cols_s = [c[1] for c in cursor.fetchall()]
-    
-    columnas_nuevas_serv = {
-        "codigo_rd": "TEXT DEFAULT ''",
-        "periodo_cobro": "TEXT DEFAULT ''",
-        "monto_pagado_acumulado": "REAL DEFAULT 0"
-    }
-
-    for col, col_type in columnas_nuevas_serv.items():
-        if col not in cols_s:
-            cursor.execute(f"ALTER TABLE servicios_mensuales_cliente ADD COLUMN {col} {col_type}")
 
     conn.commit()
     conn.close()
@@ -377,7 +380,15 @@ elif menu_principal == "Acceso a Plataforma":
 
                         c10, c11 = st.columns(2)
                         rubro_gir = c10.text_input("Rubro / Giro Comercial * (Ej: Calzado, Transporte, etc.)")
-                        f_inic_emp = c11.date_input("Fecha Inicio Actividades SII", format="DD/MM/YYYY")
+                        
+                        # CALENDARIO PERMITIDO DESDE EL AÑO 2010
+                        f_inic_emp = c11.date_input(
+                            "Fecha Inicio Actividades SII",
+                            value=datetime.date.today(),
+                            min_value=FECHA_MINIMA_2010,
+                            max_value=FECHA_MAXIMA_FUTURO,
+                            format="DD/MM/YYYY"
+                        )
 
                         c12, c13, c14 = st.columns(3)
                         clv_sii_e = c12.text_input("Clave SII Empresa", type="password")
@@ -425,11 +436,11 @@ elif menu_principal == "Acceso a Plataforma":
                                 cursor.execute("""
                                     INSERT INTO empresas_cliente (
                                         codigo_id_fk, rut_empresa, razon_social, rubro_giro,
-                                        fecha_inicio_actividades, clave_sii, clave_certificado, monto_honorarios_base
-                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                        fecha_inicio_actividades, clave_sii, clave_certificado, monto_honorarios_base, observaciones
+                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 """, (
                                     cod_un, rut_emp, razon_soc, rubro_gir,
-                                    str(f_inic_emp), clv_sii_e, clv_cert_e, hono_base_e
+                                    str(f_inic_emp), clv_sii_e, clv_cert_e, hono_base_e, obs
                                 ))
                                 conn.commit()
                                 conn.close()
@@ -437,7 +448,7 @@ elif menu_principal == "Acceso a Plataforma":
                                 st.session_state.mensaje_exito = f"✅ Cliente '{nombre_comp_titular}' ({tipo_cli_sel}) registrado con éxito (ID: {cod_un})"
                                 st.rerun()
 
-                # 2. EDITAR / ELIMINAR CLIENTE
+                # 2. EDITAR CLIENTE Y VINCULAR NUEVA EMPRESA COMPLETA (CON CAMPO TIPO CLIENTE Y DESDE 2010)
                 with tab_editar:
                     st.markdown("### ✏️ Gestión, Edición y Bajas de Clientes")
                     
@@ -458,6 +469,7 @@ elif menu_principal == "Acceso a Plataforma":
                                 "🗑️ Eliminar Cliente de la Plataforma"
                             ])
 
+                            # SUBTAB 1: EDITAR DATOS DEL CLIENTE
                             with subtab1:
                                 conn = get_db_connection()
                                 cursor = conn.cursor()
@@ -527,30 +539,77 @@ elif menu_principal == "Acceso a Plataforma":
                                             st.success("✅ Todos los datos del cliente han sido actualizados con éxito.")
                                             st.rerun()
 
+                            # SUBTAB 2: REGISTRAR NUEVA EMPRESA COMPLETA SEGÚN LA IMAGEN
                             with subtab2:
-                                st.markdown(f"#### Añadir Sub-Empresa / Giro adicional a `{cod_id_edit}`")
-                                with st.form("form_nueva_subempresa", clear_on_submit=True):
-                                    ce1, ce2 = st.columns(2)
-                                    new_razon = ce1.text_input("Razón Social / Nombre Fantasía *")
-                                    new_rut = ce2.text_input("RUT Empresa *")
-                                    ce3, ce4 = st.columns(2)
-                                    new_rubro = ce3.text_input("Rubro / Giro Comercial *")
-                                    new_hono = ce4.number_input("Honorarios Base ($ CLP) *", min_value=0.0)
+                                st.markdown(f"#### 🏢 Añadir Nueva Empresa o Rubro Asociado al Cliente `{cod_id_edit}`")
+                                
+                                conn = get_db_connection()
+                                cursor = conn.cursor()
+                                cursor.execute("SELECT tipo_cliente FROM ficha_ingreso_cliente WHERE codigo_id = ?", (cod_id_edit,))
+                                t_actual = cursor.fetchone()
+                                conn.close()
+                                tipo_cli_def = t_actual[0] if (t_actual and t_actual[0] in OPCIONES_TIPO_CLIENTE) else "Servicio Full"
 
-                                    if st.form_submit_button("➕ Vincular Empresa"):
-                                        if new_razon and new_rut:
+                                with st.form("form_nueva_subempresa_completa", clear_on_submit=True):
+                                    st.markdown('<div class="section-header">🏢 Antecedentes de la Nueva Empresa / Rubro</div>', unsafe_allow_html=True)
+                                    
+                                    # Clasificación por Tipo de Cliente asociada a la sub-empresa
+                                    idx_tipo_v = OPCIONES_TIPO_CLIENTE.index(tipo_cli_def)
+                                    n_tipo_cliente = st.selectbox("Clasificación Tipo de Cliente *", OPCIONES_TIPO_CLIENTE, index=idx_tipo_v)
+
+                                    ce1, ce2 = st.columns(2)
+                                    n_razon = ce1.text_input("Razón Social / Nombre Fantasía Empresa *")
+                                    n_rut = ce2.text_input("RUT Empresa *")
+
+                                    ce3, ce4 = st.columns(2)
+                                    n_rubro = ce3.text_input("Rubro / Giro Comercial * (Ej: Calzado, Transporte, etc.)")
+                                    
+                                    # FECHA INICIO DE ACTIVIDADES DESDE EL AÑO 2010
+                                    n_f_inicio = ce4.date_input(
+                                        "Fecha Inicio Actividades SII",
+                                        value=datetime.date.today(),
+                                        min_value=FECHA_MINIMA_2010,
+                                        max_value=FECHA_MAXIMA_FUTURO,
+                                        format="DD/MM/YYYY"
+                                    )
+
+                                    ce5, ce6, ce7 = st.columns(3)
+                                    n_clv_sii = ce5.text_input("Clave SII Empresa", type="password")
+                                    n_clv_cert = ce6.text_input("Clave Certificado Electrónico", type="password")
+                                    n_hono_base = ce7.number_input("Honorarios Base Empresa ($ CLP) *", min_value=0.0)
+
+                                    n_obs = st.text_area("Observaciones Adicionales")
+
+                                    st.divider()
+                                    if st.form_submit_button("➕ Registrar Nueva Empresa y Actualizar Cliente"):
+                                        if n_razon and n_rut:
                                             conn = get_db_connection()
                                             cursor = conn.cursor()
+                                            
+                                            # 1. Insertar la nueva empresa
                                             cursor.execute("""
-                                                INSERT INTO empresas_cliente (codigo_id_fk, rut_empresa, razon_social, rubro_giro, monto_honorarios_base)
-                                                VALUES (?, ?, ?, ?, ?)
-                                            """, (cod_id_edit, new_rut, new_razon, new_rubro, new_hono))
+                                                INSERT INTO empresas_cliente (
+                                                    codigo_id_fk, rut_empresa, razon_social, rubro_giro,
+                                                    fecha_inicio_actividades, clave_sii, clave_certificado,
+                                                    monto_honorarios_base, observaciones
+                                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                            """, (
+                                                cod_id_edit, n_rut, n_razon, n_rubro,
+                                                str(n_f_inicio), n_clv_sii, n_clv_cert, n_hono_base, n_obs
+                                            ))
+                                            
+                                            # 2. Actualizar el tipo de cliente en el titular
+                                            cursor.execute("""
+                                                UPDATE ficha_ingreso_cliente SET tipo_cliente = ? WHERE codigo_id = ?
+                                            """, (n_tipo_cliente, cod_id_edit))
+
                                             conn.commit()
                                             conn.close()
-                                            st.success(f"✅ Sub-Empresa '{new_razon}' asociada correctamente.")
+                                            
+                                            st.success(f"✅ Sub-Empresa '{n_razon}' asociada exitosamente al cliente {cod_id_edit} con clasificación '{n_tipo_cliente}'.")
                                             st.rerun()
                                         else:
-                                            st.error("Ingrese Razón Social y RUT.")
+                                            st.error("❌ Razón Social y RUT de Empresa son obligatorios.")
 
                             with subtab_del:
                                 st.markdown("#### ⚠️ Zona de Eliminación Definitiva de Cliente")
@@ -668,7 +727,6 @@ elif menu_principal == "Acceso a Plataforma":
                                                 if "Otros" in servicios_a_aperturar:
                                                     monto_otros = st.number_input("Otros ($ CLP):", min_value=0.0, key=f"mo_{id_emp}")
 
-                                            # TOTALIZACIÓN EN TIEMPO REAL
                                             total_consolidado_live = monto_iva + monto_renta + monto_prev + monto_hono_cobro + monto_cert + monto_otros
 
                                             st.markdown(f"""
@@ -712,8 +770,6 @@ elif menu_principal == "Acceso a Plataforma":
                 st.subheader("🧾 Módulo de Recibos de Dinero y Estado General de Pagos")
 
                 conn = get_db_connection()
-                
-                # Cargar todos los cobros con datos de cliente y empresa
                 df_recibos = pd.read_sql_query("""
                     SELECT 
                         COALESCE(s.codigo_rd, 'RD-0000') as ID_Pago,
@@ -739,7 +795,6 @@ elif menu_principal == "Acceso a Plataforma":
                 conn.close()
 
                 if not df_recibos.empty:
-                    # Contadores generales
                     total_registros = len(df_recibos)
                     total_pagados = len(df_recibos[df_recibos['Estado'] == 'PAGADO TOTAL'])
                     total_pendientes = len(df_recibos[df_recibos['Estado'] != 'PAGADO TOTAL'])
@@ -750,10 +805,8 @@ elif menu_principal == "Acceso a Plataforma":
                     m3.metric("🔴 Clientes con Pagos Pendientes / Parciales", f"{total_pendientes}", delta="-Pendientes", delta_color="inverse")
 
                     st.divider()
-
                     st.markdown("### 📊 Listado Consolidado de Recibos de Dinero (RD)")
 
-                    # Construir columna de detalle de servicios pagados vs pendientes
                     detalles_servicios = []
                     for idx, r in df_recibos.iterrows():
                         pagados_list = []
@@ -798,7 +851,7 @@ elif menu_principal == "Acceso a Plataforma":
                 st.subheader("📊 Consolidado Anual de Recaudación")
 
     # ======================================
-    # ENTORNO CLIENTE MULTIEMPRESA (PAGOS PROXIMOS)
+    # ENTORNO CLIENTE MULTIEMPRESA
     # ======================================
     else:
         st.subheader("🔑 Portal del Cliente - Mis Empresas y Selección de Pagos Próximos")
